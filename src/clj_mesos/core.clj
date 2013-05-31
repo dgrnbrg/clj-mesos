@@ -95,3 +95,24 @@
                           [(keyword (clojurify-name name)) v])]
           (into {} processed))))))
 
+(println (.RANGES org.apache.mesos.Protos$Value$Type))
+(map->proto org.apache.mesos.Protos$FrameworkID "hello")
+(let [fid org.apache.mesos.Protos$FrameworkID]
+ (clojure.pprint/pprint (filter #(:static (:flags %)) (:members (clojure.reflect/reflect ))))
+  )
+(defn javaify-enum-name
+  [n]
+  (-> n
+      name
+      (str/replace "-" "_")
+      (str/upper-case)))
+
+(defn map->proto
+  "Takes a protocol buffer class and a map, and converts the map into the appropriate type."
+  [proto m]
+  (cond
+    ((supers proto) com.google.protobuf.ProtocolMessageEnum)
+    (.. proto (getField (javaify-enum-name m)) (get nil))
+
+    )
+  )

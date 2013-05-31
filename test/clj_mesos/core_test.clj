@@ -87,3 +87,7 @@
                                                                     (setValue 12.0)
                                                                     build))
                                                      build))))))
+
+(deftest pb-conversions-back
+  (is (= (map->proto org.apache.mesos.Protos$Value$Type :ranges) org.apache.mesos.Protos$Value$Type/RANGES))
+  )
