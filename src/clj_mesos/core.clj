@@ -1,5 +1,7 @@
 (ns clj-mesos.core
-  (:require [clojure.string :as str])
+  (:require [clojure.string :as str]
+            [clojure.reflect :as reflect])
+  (:use [clojure.pprint :only [pprint]])
   (:import [org.apache.mesos
             Scheduler
             ]))
@@ -182,3 +184,60 @@
       (clojure.lang.Reflector/invokeStaticMethod proto "valueOf" (into-array [(javaify-enum-name m)]))
       (instance? com.google.protobuf.Descriptors$Descriptor desc)
       (.build (recursive-build (new-builder proto) m)))))
+
+(defn class-to-type
+  [class-symbol]
+  (let [name (name class-symbol)
+        class (or ({"int" java.lang.Integer
+                    "byte<>" (Class/forName "[B")} name)
+                  (Class/forName name))]
+    class))
+
+(supers (class-to-type 'org.apache.mesos.Scheduler))
+(defn make-reify-body
+  [class impls]
+  (map (fn [{:keys [name parameter-types] :as signature}]
+         (let [params parameter-types
+               marshalling-fns (map (fn [param]
+                                      (let [supers (supers (class-to-type param))]
+                                        (cond
+                                          (nil? supers)
+                                          ::skip
+                                          (supers com.google.protobuf.AbstractMessage)
+                                          `proto->map
+                                          (supers java.util.Collection)
+                                          `(fn [l#] (mapv proto->map l#))
+                                          :else
+                                          ::skip)))
+                                    params)
+               args (or (first (get impls name)) (repeat (count marshalling-fns) '_))
+               marshalled-let `(let [~@(mapcat (fn [sym f]
+                                                 (if (= f ::skip)
+                                                   nil
+                                                   [sym (list f sym)]))
+                                               args marshalling-fns)]
+                                 ~@(rest (get impls name)))]
+           `(~name [~'_ ~@args]
+                   ~(if (contains? impls name)
+                      marshalled-let
+                      nil)))
+         )
+       (:members (reflect/reflect class))))
+ 
+(defmacro scheduler
+  [& fns]
+  (let [fns (->> fns
+                 (map (fn [[fname & fntail]]
+                        [fname fntail]))
+                 (into {}))]
+    (list* 'reify 'org.apache.mesos.Scheduler (make-reify-body org.apache.mesos.Scheduler fns))))
+
+(pprint(make-reify-body org.apache.mesos.Scheduler {'registered '[[driver fid masterinfo] (println hi)]}))
+(pprint (macroexpand-1 '(scheduler
+  (registered [driver fid master-info]
+              (println "registered" fid)))))
+
+
+(scheduler
+  (registered [driver fid master-info]
+              (println "registered" fid)))
