@@ -95,11 +95,6 @@
                           [(keyword (clojurify-name name)) v])]
           (into {} processed))))))
 
-(println (.RANGES org.apache.mesos.Protos$Value$Type))
-(map->proto org.apache.mesos.Protos$FrameworkID "hello")
-(let [fid org.apache.mesos.Protos$FrameworkID]
- (clojure.pprint/pprint (filter #(:static (:flags %)) (:members (clojure.reflect/reflect ))))
-  )
 (defn javaify-enum-name
   [n]
   (-> n
@@ -107,12 +102,83 @@
       (str/replace "-" "_")
       (str/upper-case)))
 
+(defn get-descriptor
+  [proto]
+  (clojure.lang.Reflector/invokeStaticMethod proto "getDescriptor" (into-array [])))
+
+(defn new-builder
+  [proto]
+  (clojure.lang.Reflector/invokeStaticMethod proto "newBuilder" (into-array [])))
+
+(defn recursive-build
+  "Takes a protobuf builder and a map, and recursively builds the protobuf."
+  [builder m]
+  (let [desc (.getDescriptorForType builder)
+        fields (.getFields desc)]
+    (if (= 1 (count fields))
+      (.setField builder (first fields) m)
+      (reduce (fn [builder field]
+                (let [name (clojurify-name (.getName field))
+                      value (get m (keyword name) ::missing)
+                      message? (= (.getType field) com.google.protobuf.Descriptors$FieldDescriptor$Type/MESSAGE)
+                      enum? (= (.getType field) com.google.protobuf.Descriptors$FieldDescriptor$Type/ENUM)
+                      ;; Fix ups for simplicity
+                      value (cond
+                              ;; Fix up Resources and Attributes
+                              (and message?
+                                   (#{"mesos.Attribute" "mesos.Resource"} (.. field getMessageType getFullName)))
+                              (mapv (fn [[k v]]
+                                      (let [type (cond
+                                                   (set? v) :set
+                                                   (float? v) :scalar
+                                                   (every? #(and (contains? % :begin) (contains? % :end)) v) :ranges)]
+                                        (assoc
+                                          {:name (clojure.core/name k)
+                                           :type type #_(case type
+                                                   :set org.apache.mesos.Protos$Value$Type/SET
+                                                   :scalar org.apache.mesos.Protos$Value$Type/SCALAR
+                                                   :ranges org.apache.mesos.Protos$Value$Type/RANGES)}
+                                          type
+                                          v)))
+                                    (if (= value ::missing) [] value))
+                              enum?
+                              (.getValueDescriptor
+                                (java.lang.Enum/valueOf
+                                  (case (.. field getEnumType getFullName)
+                                    "mesos.Value.Type" org.apache.mesos.Protos$Value$Type
+                                    "mesos.TaskState" org.apache.mesos.Protos$TaskState
+                                    "mesos.Status" org.apache.mesos.Protos$Status)
+                                  (javaify-enum-name value)))
+                              :else
+                              value)
+                      include
+                      (cond
+                        (.isRepeated field)
+                        (fn [value-processor]
+                          (doseq [v value] (.addRepeatedField builder field (value-processor v)))
+                          builder)
+                        :else
+                        (fn [value-processor]
+                          (.setField builder field (value-processor value))))]
+                  (when (= value ::missing)
+                    (assert (not (.isRequired field)) "Missing required field"))
+                  (cond
+                    (= value ::missing)
+                    builder
+                    message?
+                    (include
+                      #(.build (recursive-build (.newBuilderForField builder field) %)))
+                    :else
+                    (include identity))))
+              builder
+              fields))))
+
 (defn map->proto
   "Takes a protocol buffer class and a map, and converts the map into the appropriate type."
   [proto m]
-  (cond
-    ((supers proto) com.google.protobuf.ProtocolMessageEnum)
-    (.. proto (getField (javaify-enum-name m)) (get nil))
-
-    )
-  )
+  (let [desc (get-descriptor proto)]
+    (cond
+      (instance? com.google.protobuf.Descriptors$EnumDescriptor desc)
+      (clojure.lang.Reflector/invokeStaticMethod proto "valueOf" (into-array [(javaify-enum-name m)]))
+      (instance? com.google.protobuf.Descriptors$Descriptor desc)
+      (.build (recursive-build (new-builder proto) m)))))

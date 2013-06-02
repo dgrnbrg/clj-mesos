@@ -88,6 +88,24 @@
                                                                     build))
                                                      build))))))
 
+(defn roundtrip-via
+  [proto data]
+  (is (->> data
+           (map->proto proto)
+           (proto->map)
+           (= data))))
+
 (deftest pb-conversions-back
   (is (= (map->proto org.apache.mesos.Protos$Value$Type :ranges) org.apache.mesos.Protos$Value$Type/RANGES))
-  )
+  (roundtrip-via org.apache.mesos.Protos$Offer {:id "hello",
+                                                :framework-id "goodbye",
+                                                :slave-id "foo",
+                                                :hostname "localhost"})
+  (roundtrip-via org.apache.mesos.Protos$Offer {:id "hello",
+                                                :framework-id "goodbye",
+                                                :slave-id "foo",
+                                                :hostname "localhost"
+                                                :resources {:cpu 12.0
+                                                            :mem 1024.0}
+                                                :executor-ids ["one" "two" "three"]})
+  (roundtrip-via org.apache.mesos.Protos$FrameworkID "hello"))
