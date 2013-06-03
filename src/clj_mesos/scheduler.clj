@@ -7,11 +7,7 @@
 
 (defmacro scheduler
   [& fns]
-  (let [fns (->> fns
-                 (map (fn [[fname & fntail]]
-                        [fname fntail]))
-                 (into {}))]
-    (list* 'reify 'org.apache.mesos.Scheduler (make-reify-body org.apache.mesos.Scheduler fns))))
+  (make-proxy-body 'org.apache.mesos.Scheduler fns))
 
 (comment
   (def myscheduler (scheduler (registered [driver fid mi]
@@ -21,4 +17,5 @@
   (def overdriver
     (org.apache.mesos.MesosSchedulerDriver.
       myscheduler fi "localhost:5050"))
-  (start overdriver))
+  (start overdriver)
+  (stop overdriver))

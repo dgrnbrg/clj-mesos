@@ -177,35 +177,45 @@
                   (Class/forName name))]
     class))
 
-(defn make-reify-body
-  [class impls]
-  (map (fn [{:keys [name parameter-types] :as signature}]
-         (let [params parameter-types
-               marshalling-fns (map (fn [param]
-                                      (let [supers (supers (class-to-type param))]
-                                        (cond
-                                          (nil? supers)
-                                          ::skip
-                                          (supers com.google.protobuf.AbstractMessage)
-                                          `proto->map
-                                          (supers java.util.Collection)
-                                          `(fn [l#] (mapv proto->map l#))
-                                          :else
-                                          ::skip)))
-                                    params)
-               args (or (first (get impls name)) (repeat (count marshalling-fns) '_))
-               marshalled-let `(let [~@(mapcat (fn [sym f]
-                                                 (if (= f ::skip)
-                                                   nil
-                                                   [sym (list f sym)]))
-                                               args marshalling-fns)]
-                                 ~@(rest (get impls name)))]
-           `(~name [~'_ ~@args]
-                   ~(if (contains? impls name)
-                      marshalled-let
-                      nil)))
-         )
-       (:members (reflect/reflect class))))
+(defn make-proxy-body
+  [class fns]
+  (let [impls (->> fns
+                   (map (fn [[fname & fntail]]
+                          [fname fntail]))
+                   (into {}))
+        body (map (fn [{:keys [name parameter-types] :as signature}]
+                    (let [params parameter-types
+                          marshalling-fns
+                          (map (fn [param]
+                                 (let [supers (supers (class-to-type param))]
+                                   ;; TODO: refactor to use contains? to avoid the nil? special case
+                                   (cond
+                                     (nil? supers)
+                                     ::skip
+                                     (supers com.google.protobuf.AbstractMessage)
+                                     `proto->map
+                                     (supers java.util.Collection)
+                                     `(fn [l#] (mapv proto->map l#))
+                                     :else
+                                     ::skip)))
+                               params)
+                          args (or (first (get impls name))
+                                   (repeat (count marshalling-fns) '_))
+                          marshalled-let
+                          `(let [~@(mapcat (fn [sym f]
+                                             (if (= f ::skip)
+                                               nil
+                                               [sym (list f sym)]))
+                                           args marshalling-fns)]
+                             ~@(rest (get impls name)))]
+                      `(~name [~@args]
+                              ~(if (contains? impls name)
+                                 marshalled-let
+                                 nil)))
+                    )
+                  (:members (reflect/reflect (class-to-type class))))]
+    `(proxy [~class] []
+       ~@body)))
 
 (defn make-reflective-fn
   "Takes a data structure from clojure.reflect/reflect's members and returns

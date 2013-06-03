@@ -5,9 +5,4 @@
 
 (defmacro executor
   [& fns]
-  (let [fns (->> fns
-                 (map (fn [[fname & fntail]]
-                        [fname fntail]))
-                 (into {}))]
-    (list* 'reify 'org.apache.mesos.Executor (make-reify-body org.apache.mesos.Executor fns))))
-
+  (make-proxy-body 'org.apache.mesos.Executor fns))
