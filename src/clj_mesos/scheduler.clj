@@ -9,13 +9,19 @@
   [& fns]
   (make-proxy-body 'org.apache.mesos.Scheduler fns))
 
+(defn driver
+  [scheduler framework-info master]
+  (org.apache.mesos.MesosSchedulerDriver.
+    scheduler
+    (map->proto org.apache.mesos.Protos$FrameworkInfo framework-info)
+    master))
+
 (comment
   (def myscheduler (scheduler (registered [driver fid mi]
                                           (println "registered" fid mi)) 
                               (resourceOffers [driver offers] (clojure.pprint/pprint offers))))
-  (def fi (map->proto org.apache.mesos.Protos$FrameworkInfo {:user "" :name "testframework"}))
   (def overdriver
-    (org.apache.mesos.MesosSchedulerDriver.
-      myscheduler fi "localhost:5050"))
+    (driver
+      myscheduler {:user "" :name "testframework"} "localhost:5050"))
   (start overdriver)
   (stop overdriver))

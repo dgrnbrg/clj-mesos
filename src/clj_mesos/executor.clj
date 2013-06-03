@@ -6,3 +6,7 @@
 (defmacro executor
   [& fns]
   (make-proxy-body 'org.apache.mesos.Executor fns))
+
+(defn driver
+  [executor]
+  (org.apache.mesos.MesosExecutorDriver. executor))
