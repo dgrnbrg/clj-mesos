@@ -1,4 +1,6 @@
 (ns clj-mesos.scheduler
+  (:require [clojure.reflect :as reflect]
+            [clojure.string :as str])
   (:use clj-mesos.marshalling))
 
 (defdriver org.apache.mesos.SchedulerDriver
@@ -8,6 +10,8 @@
 (defmacro scheduler
   [& fns]
   (make-proxy-body 'org.apache.mesos.Scheduler fns))
+
+(alter-meta! #'scheduler assoc :doc (str "methods: " (str/join " " (map :name (:members (reflect/reflect org.apache.mesos.Scheduler))))))
 
 (defn driver
   [scheduler framework-info master]
