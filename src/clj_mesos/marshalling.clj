@@ -66,6 +66,7 @@
                               :let [name (.getName desc)
                                     v (cond
                                         (or (string? v) (integer? v) (float? v)) v
+                                        (instance? com.google.protobuf.ByteString v) (.toByteArray v)
                                         (and (.isRepeated desc)
                                              (#{"mesos.Resource"
                                                 "mesos.Attribute"}
@@ -153,6 +154,8 @@
                     message?
                     (include
                       #(.build (recursive-build (.newBuilderForField builder field) %)))
+                    (= (.getType field ) com.google.protobuf.Descriptors$FieldDescriptor$Type/BYTES)
+                    (include #(com.google.protobuf.ByteString/copyFrom %))
                     :else
                     (include identity))))
               builder
