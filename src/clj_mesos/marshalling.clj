@@ -141,11 +141,18 @@
                       (cond
                         (.isRepeated field)
                         (fn [value-processor]
-                          (doseq [v value] (.addRepeatedField builder field (value-processor v)))
+                          (doseq [v value]
+                            (try
+                              (.addRepeatedField builder field (value-processor v))
+                              (catch Exception e
+                                (throw (ex-info "Could not marshall repeated field" {:field field :value v} e)))))
                           builder)
                         :else
                         (fn [value-processor]
-                          (.setField builder field (value-processor value))))]
+                          (try
+                            (.setField builder field (value-processor value))
+                            (catch Exception e
+                              (throw (ex-info "Could not marshall field" {:field field :value value} e))))))]
                   (when (= value ::missing)
                     (assert (not (.isRequired field)) "Missing required field"))
                   (cond
