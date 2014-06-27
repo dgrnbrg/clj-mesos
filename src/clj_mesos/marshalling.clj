@@ -47,6 +47,10 @@
     (-> proto .name clojurify-name keyword)
     (instance? com.google.protobuf.Descriptors$EnumValueDescriptor proto) 
     (-> proto .getName clojurify-name keyword)
+    (.. proto getClass isPrimitive)
+    proto
+    (#{Boolean Long Short Character Double Float} (.getClass proto))
+    proto
     :else
     (let [fields (seq (.getAllFields proto))]
       (cond
@@ -219,6 +223,7 @@
                                            args marshalling-fns)]
                              ~@(rest (get impls name)))]
                       `(~name [~@args]
+                              ;(println "In callback: " ~(clojure.core/name name))
                               ~(if (contains? impls name)
                                  marshalled-let
                                  nil)))
@@ -227,16 +232,27 @@
     `(proxy [~class] []
        ~@body)))
 
+(defn distinct-by
+  [f coll]
+  (loop [result []
+         seen #{}
+         [h & t] coll]
+    (if h
+      (if (contains? seen (f h))
+        (recur result seen t)
+        (recur (conj result h) (conj seen (f h)) t))
+      result)))
+
 (defn make-reflective-fn
   "Takes a data structure from clojure.reflect/reflect's members and returns
    the syntax for a fn that invokes the function, marshalling protobufs automatically.
    If an argument is a collection, a gensym
    will be passed to `fixup`, and `fixup` should return syntax that operates on the
    given gensym and returns the properly marshalled collection."
-  [name arities return-type fixup]
+  [name driver-type arities return-type fixup]
   (letfn [(make-arity [parameter-types]
             (let [params (repeatedly (count parameter-types) gensym)
-                  driver-sym (gensym "driver")
+                  driver-sym (with-meta (gensym "driver") {:tag driver-type})
                   param-marshalling (mapcat (fn [sym param]
                                               (let [type (class-to-type param)
                                                     supers (conj (supers (class-to-type param)) type)]
@@ -250,14 +266,15 @@
                                             params parameter-types)
                   invocation (list* `. driver-sym name params)]
               `([~driver-sym ~@params]
+                ;(println "In driver fn" ~(clojure.core/name name))
                 (let [~@param-marshalling]
                   ~(if (contains? (supers (class-to-type return-type)) com.google.protobuf.AbstractMessage)
                      `(proto->map ~invocation)
                      invocation)))))]
-    (assert (= (count (distinct (map count arities))) (count arities)))
+    (when (= (count (distinct (map count arities))) (count arities)) (str name " has difficult arities: " (pr-str arities)))
     `(defn ~(symbol (clojurify-name (clojure.core/name name)))
        ~(str/join "\n  " (map #(str "type signature: "(str/join " " %)) arities))
-       ~@(map make-arity arities))))
+       ~@(map make-arity (distinct-by count arities)))))
 
 (defmacro defdriver
   [driver & handlers]
@@ -267,6 +284,7 @@
           (mapv (fn [[method-name methods]]
                   (make-reflective-fn
                     method-name
+                    driver
                     (map :parameter-types methods)
                     (-> methods first :return-type)
                     (fn [sym]
