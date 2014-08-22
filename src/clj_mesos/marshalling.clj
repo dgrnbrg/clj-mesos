@@ -138,6 +138,7 @@
                                     "mesos.Value.Type" org.apache.mesos.Protos$Value$Type
                                     "mesos.TaskState" org.apache.mesos.Protos$TaskState
                                     "mesos.Status" org.apache.mesos.Protos$Status
+                                    "mesos.Volume.Mode" org.apache.mesos.Protos$Volume$Mode
                                     "mesos.ContainerInfo.Type" org.apache.mesos.Protos$ContainerInfo$Type)
                                   (javaify-enum-name value)))
                               :else
