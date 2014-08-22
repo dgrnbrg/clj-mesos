@@ -137,7 +137,8 @@
                                   (case (.. field getEnumType getFullName)
                                     "mesos.Value.Type" org.apache.mesos.Protos$Value$Type
                                     "mesos.TaskState" org.apache.mesos.Protos$TaskState
-                                    "mesos.Status" org.apache.mesos.Protos$Status)
+                                    "mesos.Status" org.apache.mesos.Protos$Status
+                                    "mesos.ContainerInfo.Type" org.apache.mesos.Protos$ContainerInfo$Type)
                                   (javaify-enum-name value)))
                               :else
                               value)
