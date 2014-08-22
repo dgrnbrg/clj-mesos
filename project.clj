@@ -1,4 +1,4 @@
-(defproject clj-mesos "0.20.0"
+(defproject clj-mesos "0.20.1"
   :description "FIXME: write description"
   :url "http://example.com/FIXME"
   :license {:name "Eclipse Public License"
