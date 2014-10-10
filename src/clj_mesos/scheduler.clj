@@ -15,11 +15,17 @@
 (alter-meta! #'scheduler assoc :doc (str "methods: " (str/join " " (map :name (:members (reflect/reflect org.apache.mesos.Scheduler))))))
 
 (defn driver
-  [scheduler framework-info master]
-  (org.apache.mesos.MesosSchedulerDriver.
-    scheduler
-    (map->proto org.apache.mesos.Protos$FrameworkInfo framework-info)
-    master))
+  ([scheduler framework-info master]
+   (org.apache.mesos.MesosSchedulerDriver.
+     scheduler
+     (map->proto org.apache.mesos.Protos$FrameworkInfo framework-info)
+     master))
+  ([scheduler framework-info master credential]
+   (org.apache.mesos.MesosSchedulerDriver.
+     scheduler
+     (map->proto org.apache.mesos.Protos$FrameworkInfo framework-info)
+     master
+     (map->proto org.apache.mesos.Protos$Credential credential))))
 
 (comment
   (def myscheduler (scheduler (registered [driver fid mi]
