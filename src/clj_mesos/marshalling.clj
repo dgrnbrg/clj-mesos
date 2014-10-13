@@ -1,6 +1,7 @@
 (ns clj-mesos.marshalling
   (:require [clojure.string :as str]
-            [clojure.reflect :as reflect])
+            [clojure.reflect :as reflect]
+            [clojure.tools.logging :as log])
   (:import [org.apache.mesos
             Scheduler]))
 
@@ -45,7 +46,7 @@
     ;; Handle enums, since they're not composite
     (.. proto getClass isEnum)
     (-> proto .name clojurify-name keyword)
-    (instance? com.google.protobuf.Descriptors$EnumValueDescriptor proto) 
+    (instance? com.google.protobuf.Descriptors$EnumValueDescriptor proto)
     (-> proto .getName clojurify-name keyword)
     (.. proto getClass isPrimitive)
     proto
@@ -227,7 +228,10 @@
                       `(~name [~@args]
                               ;(println "In callback: " ~(clojure.core/name name))
                               ~(if (contains? impls name)
-                                 marshalled-let
+                                 (try
+                                   marshalled-let
+                                       (catch Throwable e#
+                                         (log/error e# "Error in mesos callback")))
                                  nil)))
                     )
                   (:members (reflect/reflect (class-to-type class))))]
