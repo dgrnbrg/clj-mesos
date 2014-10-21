@@ -226,10 +226,14 @@
                              ~@(rest (get impls name)))]
                       `(~name [~@args]
                               ;(println "In callback: " ~(clojure.core/name name))
-                              ~(if (contains? impls name)
-                                 marshalled-let
-                                 nil)))
-                    )
+                              (~'try
+                                ~(if (contains? impls name)
+                                   marshalled-let
+                                   nil)
+                                (~'catch Throwable t#
+                                  (.println System/err
+                                            ~(str "Error in " (clojure.core/name name)))
+                                  (.printStackTrace t#))))))
                   (:members (reflect/reflect (class-to-type class))))]
     `(proxy [~class] []
        ~@body)))
@@ -245,38 +249,72 @@
         (recur (conj result h) (conj seen (f h)) t))
       result)))
 
+(defn marshall-one-param
+  "Generate the binding to marshall the given sym to the given param-type"
+  [sym param-type erased-type]
+  (let [type (class-to-type param-type)
+        supers (conj (supers type) type)]
+    (cond
+      (contains? supers com.google.protobuf.AbstractMessage)
+      [sym (list `map->proto param-type sym)]
+      (contains? supers java.util.Collection)
+      [sym `(map (partial map->proto ~erased-type) ~sym)]
+      :else
+      [])))
+
+(defn marshall-params
+  "Generate a binding that marshalls the given sym to either the scalar
+   or collection type depending on whether the symbol is a scalar or collection
+   at runtime"
+  [sym scalar-type collection-type]
+  (let [[_ marshall-scalar] (marshall-one-param
+                              sym scalar-type nil)
+        [_ marshall-collection] (marshall-one-param
+                                  sym 'java.util.Collection collection-type)]
+    [sym `(if (or (vector? ~sym)
+                  (seq? ~sym)
+                  (nil? ~sym))
+            ~marshall-collection
+            ~marshall-scalar)]))
+
+(defn make-reflective-param-marshalling
+  [name driver-type arities erased-types]
+  (for [[arity-size arity-types] (group-by count arities)]
+    ;; We must check that for each position, there's only one non-collection arity
+    (do (assert (->> (apply map vector arity-types)
+                     (map (fn [ts] (remove #(= 'java.util.Collection %) ts)))
+                     (every? #(<= (count (distinct %)) 1)))
+                "Each position must have only one distinct non-collection arity")
+        (let [params (repeatedly arity-size gensym)
+              driver-sym (with-meta (gensym "driver") {:tag driver-type})
+              param-marshalling (mapcat (fn [sym param-types collection-type]
+                                          (if (= 1 (count (distinct param-types)))
+                                            (marshall-one-param sym (first param-types) collection-type)
+                                            ;; TODO: handle multi case
+                                            (marshall-params sym (some #(and (not= 'java.util.Collection %) %) param-types) collection-type)))
+                                        params (apply map vector arity-types) (concat erased-types (repeat nil)))
+              invocation (list* `. driver-sym name params)]
+          `([~driver-sym ~@params]
+            ;(println "In driver fn" ~(clojure.core/name name))
+            (let [~@param-marshalling]
+              (proto->map ~invocation))))))
+  )
+
 (defn make-reflective-fn
   "Takes a data structure from clojure.reflect/reflect's members and returns
    the syntax for a fn that invokes the function, marshalling protobufs automatically.
-   If an argument is a collection, a gensym
-   will be passed to `fixup`, and `fixup` should return syntax that operates on the
-   given gensym and returns the properly marshalled collection."
-  [name driver-type arities return-type fixup]
-  (letfn [(make-arity [parameter-types]
-            (let [params (repeatedly (count parameter-types) gensym)
-                  driver-sym (with-meta (gensym "driver") {:tag driver-type})
-                  param-marshalling (mapcat (fn [sym param]
-                                              (let [type (class-to-type param)
-                                                    supers (conj (supers (class-to-type param)) type)]
-                                                (cond
-                                                  (contains? supers com.google.protobuf.AbstractMessage)
-                                                  [sym (list `map->proto param sym)]
-                                                  (contains? supers java.util.Collection)
-                                                  [sym (fixup sym)]
-                                                  :else
-                                                  [])))
-                                            params parameter-types)
-                  invocation (list* `. driver-sym name params)]
-              `([~driver-sym ~@params]
-                ;(println "In driver fn" ~(clojure.core/name name))
-                (let [~@param-marshalling]
-                  ~(if (contains? (supers (class-to-type return-type)) com.google.protobuf.AbstractMessage)
-                     `(proto->map ~invocation)
-                     invocation)))))]
-    (when (= (count (distinct (map count arities))) (count arities)) (str name " has difficult arities: " (pr-str arities)))
-    `(defn ~(symbol (clojurify-name (clojure.core/name name)))
-       ~(str/join "\n  " (map #(str "type signature: "(str/join " " %)) arities))
-       ~@(map make-arity (distinct-by count arities)))))
+
+   erased-types contains the types to use for collection arguments in that
+   argument position. At runtime, we'll check to see if the argument is a collection
+   or not (where collection means seq, vector, or nil). If it's a collection, it'll
+   marshall it according to the specified type. Otherwise, it'll assume that there's
+   a single arity that we can use to marshall to.
+   "
+  [name driver-type arities return-type erased-types]
+  (when (= (count (distinct (map count arities))) (count arities)) (str name " has difficult arities: " (pr-str arities)))
+  `(defn ~(symbol (clojurify-name (clojure.core/name name)))
+     ~(str/join "\n  " (map #(str "type signature: "(str/join " " %)) arities))
+     ~@(make-reflective-param-marshalling name driver-type arities erased-types)))
 
 (defmacro defdriver
   [driver & handlers]
@@ -289,6 +327,7 @@
                     driver
                     (map :parameter-types methods)
                     (-> methods first :return-type)
-                    (fn [sym]
+                    (handlers method-name)
+                    #_(fn [sym]
                       `(mapv (partial map->proto ~(handlers method-name)) ~sym))))
                 methods))))

@@ -4,9 +4,9 @@
   (:use clj-mesos.marshalling))
 
 (defdriver org.apache.mesos.SchedulerDriver
-  launchTasks org.apache.mesos.Protos$TaskInfo
-  requestResources org.apache.mesos.Protos$Request
-  reconcileTasks org.apache.mesos.Protos$TaskStatus)
+  launchTasks [org.apache.mesos.Protos$OfferID org.apache.mesos.Protos$TaskInfo]
+  requestResources [org.apache.mesos.Protos$Request]
+  reconcileTasks [org.apache.mesos.Protos$TaskStatus])
 
 (defmacro scheduler
   [& fns]
