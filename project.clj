@@ -1,4 +1,4 @@
-(defproject clj-mesos "0.20.5"
+(defproject clj-mesos "0.20.6-SNAPSHOT"
   :description "A fully-featured Mesos binding for Clojure"
   :url "http://github.com/dgrnbrg/clj-mesos"
   :license {:name "Eclipse Public License"
