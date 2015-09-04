@@ -45,12 +45,16 @@
     ;; Handle enums, since they're not composite
     (.. proto getClass isEnum)
     (-> proto .name clojurify-name keyword)
-    (instance? com.google.protobuf.Descriptors$EnumValueDescriptor proto) 
+
+    (instance? com.google.protobuf.Descriptors$EnumValueDescriptor proto)
     (-> proto .getName clojurify-name keyword)
+
     (.. proto getClass isPrimitive)
     proto
+
     (#{Boolean Long Short Character Double Float} (.getClass proto))
     proto
+
     :else
     (let [fields (seq (.getAllFields proto))]
       (cond
@@ -100,6 +104,19 @@
   [proto]
   (clojure.lang.Reflector/invokeStaticMethod proto "newBuilder" (into-array [])))
 
+(defn fieldName->class
+  "Maps a protobuf fieldName to className.
+
+  Example:
+  (= (fieldName->className \"mesos.Status\") org.apache.mesos.Proto$Status)"
+  [fieldName]
+  (let [packageName "org.apache.mesos.Protos"
+        classes (-> fieldName
+                    (str/split #"\.")
+                    (rest))
+        className (str/join "$" (conj classes packageName))]
+    (Class/forName className)))
+
 (defn recursive-build
   "Takes a protobuf builder and a map, and recursively builds the protobuf."
   [builder m]
@@ -132,15 +149,13 @@
                                           v)))
                                     (if (= value ::missing) [] value))
                               enum?
-                              (.getValueDescriptor
-                                (java.lang.Enum/valueOf
-                                  (case (.. field getEnumType getFullName)
-                                    "mesos.Value.Type" org.apache.mesos.Protos$Value$Type
-                                    "mesos.TaskState" org.apache.mesos.Protos$TaskState
-                                    "mesos.Status" org.apache.mesos.Protos$Status
-                                    "mesos.Volume.Mode" org.apache.mesos.Protos$Volume$Mode
-                                    "mesos.ContainerInfo.Type" org.apache.mesos.Protos$ContainerInfo$Type)
-                                  (javaify-enum-name value)))
+                              (if (= value ::missing)
+                                value
+                                (.getValueDescriptor
+                                 (java.lang.Enum/valueOf
+                                  (fieldName->class (.. field getEnumType getFullName))
+                                  (javaify-enum-name value))))
+
                               :else
                               value)
                       include
@@ -153,6 +168,7 @@
                               (catch Exception e
                                 (throw (ex-info "Could not marshall repeated field" {:field field :value v} e)))))
                           builder)
+
                         :else
                         (fn [value-processor]
                           (try
@@ -164,11 +180,14 @@
                   (cond
                     (= value ::missing)
                     builder
+
                     message?
                     (include
                       #(.build (recursive-build (.newBuilderForField builder field) %)))
+
                     (= (.getType field ) com.google.protobuf.Descriptors$FieldDescriptor$Type/BYTES)
                     (include #(com.google.protobuf.ByteString/copyFrom %))
+
                     :else
                     (include identity))))
               builder
