@@ -176,7 +176,7 @@
                             (catch Exception e
                               (throw (ex-info "Could not marshall field" {:field field :value value} e))))))]
                   (when (= value ::missing)
-                    (assert (not (.isRequired field)) "Missing required field"))
+                    (assert (not (.isRequired field)) (str "Missing required field " (.getName field) " in message " (.getFullName desc))))
                   (cond
                     (= value ::missing)
                     builder
