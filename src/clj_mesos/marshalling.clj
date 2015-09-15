@@ -1,5 +1,6 @@
 (ns clj-mesos.marshalling
   (:require [clojure.string :as str]
+            [clojure.tools.logging :as log]
             [clojure.reflect :as reflect])
   (:import [org.apache.mesos
             Scheduler]))
@@ -141,10 +142,7 @@
                                                    (every? #(and (contains? % :begin) (contains? % :end)) v) :ranges)]
                                         (assoc
                                           {:name (clojure.core/name k)
-                                           :type type #_(case type
-                                                   :set org.apache.mesos.Protos$Value$Type/SET
-                                                   :scalar org.apache.mesos.Protos$Value$Type/SCALAR
-                                                   :ranges org.apache.mesos.Protos$Value$Type/RANGES)}
+                                           :type type}
                                           type
                                           v)))
                                     (if (= value ::missing) [] value))
@@ -166,7 +164,7 @@
                             (try
                               (.addRepeatedField builder field (value-processor v))
                               (catch Exception e
-                                (throw (ex-info "Could not marshall repeated field" {:field field :value v} e)))))
+                                (throw (ex-info "Could not marshall repeated field" {:field field :value v :desc desc} e)))))
                           builder)
 
                         :else
@@ -174,7 +172,7 @@
                           (try
                             (.setField builder field (value-processor value))
                             (catch Exception e
-                              (throw (ex-info "Could not marshall field" {:field field :value value} e))))))]
+                              (throw (ex-info "Could not marshall field" {:field field :value value :desc desc} e))))))]
                   (when (= value ::missing)
                     (assert (not (.isRequired field)) (str "Missing required field " (.getName field) " in message " (.getFullName desc))))
                   (cond
@@ -244,15 +242,13 @@
                                            args marshalling-fns)]
                              ~@(rest (get impls name)))]
                       `(~name [~@args]
-                              ;(println "In callback: " ~(clojure.core/name name))
+                              (log/debug "In callback: " ~(clojure.core/name name) "with args" ~@args)
                               (~'try
                                 ~(if (contains? impls name)
                                    marshalled-let
                                    nil)
                                 (~'catch Throwable t#
-                                  (.println System/err
-                                            ~(str "Error in " (clojure.core/name name)))
-                                  (.printStackTrace t#))))))
+                                  (log/error t# ~(str "Error in " (clojure.core/name name))))))))
                   (:members (reflect/reflect (class-to-type class))))]
     `(proxy [~class] []
        ~@body)))
@@ -314,10 +310,9 @@
                                         params (apply map vector arity-types) (concat erased-types (repeat nil)))
               invocation (list* `. driver-sym name params)]
           `([~driver-sym ~@params]
-            ;(println "In driver fn" ~(clojure.core/name name))
+            (log/debug "In driver fn" ~(clojure.core/name name))
             (let [~@param-marshalling]
-              (proto->map ~invocation))))))
-  )
+              (proto->map ~invocation)))))))
 
 (defn make-reflective-fn
   "Takes a data structure from clojure.reflect/reflect's members and returns
