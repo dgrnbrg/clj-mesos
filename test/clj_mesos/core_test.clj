@@ -108,4 +108,15 @@
                                                 :resources {:cpu 12.0
                                                             :mem 1024.0}
                                                 :executor-ids ["one" "two" "three"]})
+  (roundtrip-via org.apache.mesos.Protos$TaskInfo {:slave-id "20150911-202419-16842879-5050-1247-S0",
+                                                   :name "cookjob_vagrant_702213fc-4f57-4fcd-9437-d99aea7976be",
+                                                   :task-id "702213fc-4f57-4fcd-9437-d99aea7976be",
+                                                   :resources {:cpus 1.5, :mem 1000.0}
+                                                   :command {:value "echo hello my friend",
+                                                             :uris [{:value "http://google.com/index.html"
+                                                                     :extract false}]
+                                                             :environment {"lol" "lol2",
+                                                                           "foo" "bar",
+                                                                           "baz" "quuz"},
+                                                             :user "vagrant"}})
   (roundtrip-via org.apache.mesos.Protos$FrameworkID "hello"))

@@ -66,6 +66,9 @@
         {:name (.getName proto) :value (handle-value-type proto)}
         (= "mesos.Resource" (.. proto getDescriptorForType getFullName))
         {:name (.getName proto) :value (handle-value-type proto)}
+        ;; Hack for nice environment variable handling
+        (= "mesos.Environment" (.. proto getDescriptorForType getFullName))
+        (into {} (map (fn [v] [(.getName v) (.getValue v)]) (.getValue (first fields))))
         ;; Some Mesos values are just a single "value", which we'll treat specially
         (= 1 (count fields))
         (let [[[_ v]] fields] v)
@@ -78,7 +81,8 @@
                                         (instance? com.google.protobuf.ByteString v) (.toByteArray v)
                                         (and (.isRepeated desc)
                                              (#{"mesos.Resource"
-                                                "mesos.Attribute"}
+                                                "mesos.Attribute"
+                                                "mesos.Environment.Variable"}
                                                (.. desc getMessageType getFullName)))
                                         (->> v
                                              (map (fn [map-entry]
@@ -123,8 +127,16 @@
   [builder m]
   (let [desc (.getDescriptorForType builder)
         fields (.getFields desc)]
-    (if (= 1 (count fields))
+    (cond
+      (and (= 1 (count fields)) (not (.isRepeated (first fields))))
       (.setField builder (first fields) m)
+      ;; This clause allows us to use a map directly for the environment vars
+      ;; When we want to build an environment, we need to follow the :else clause
+      ;; But that clause requires the :variables repeated field to be set to a map (since the fix up will handle that correctly)
+      ;; So this clause just pushes a k/v env var map into its subfield, :variables
+      (and (= (.getFullName desc) "mesos.Environment") (= ::no (get m :variables ::no)))
+      (recursive-build builder {:variables m})
+      :else
       (reduce (fn [builder field]
                 (let [name (clojurify-name (.getName field))
                       value (get m (keyword name) ::missing)
@@ -132,19 +144,20 @@
                       enum? (= (.getType field) com.google.protobuf.Descriptors$FieldDescriptor$Type/ENUM)
                       ;; Fix ups for simplicity
                       value (cond
-                              ;; Fix up Resources and Attributes
+                              ;; Fix up Resources and Attributes and Env Vars
                               (and message?
-                                   (#{"mesos.Attribute" "mesos.Resource"} (.. field getMessageType getFullName)))
+                                   (#{"mesos.Attribute" "mesos.Resource" "mesos.Environment.Variable"} (.. field getMessageType getFullName)))
                               (mapv (fn [[k v]]
                                       (let [type (cond
                                                    (set? v) :set
                                                    (float? v) :scalar
+                                                   (string? v) :value
                                                    (every? #(and (contains? % :begin) (contains? % :end)) v) :ranges)]
-                                        (assoc
+                                        (merge
                                           {:name (clojure.core/name k)
-                                           :type type}
-                                          type
-                                          v)))
+                                           type v}
+                                          (when (not= type :value) ;; Attribute or Resource
+                                            {:type type}))))
                                     (if (= value ::missing) [] value))
                               enum?
                               (if (= value ::missing)
