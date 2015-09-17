@@ -2,6 +2,8 @@
 
 A Clojure library that provides integration with Mesos via the Java API.
 
+[![Build Status](https://travis-ci.org/dgrnbrg/clj-mesos.svg)](https://travis-ci.org/dgrnbrg/clj-mesos)
+
 ## Usage
 
 This library has the exact same functions and callbacks as the [Java Mesos API](http://mesos.apache.org/api/latest/java/),
